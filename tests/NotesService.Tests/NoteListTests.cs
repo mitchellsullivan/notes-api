@@ -9,16 +9,15 @@ public sealed class NoteListTests : IClassFixture<NotesApiFactory>
     [Fact]
     public async Task List_paginates_with_a_stable_total_count()
     {
-        var client = factory.CreateClient();
-        // Notes are global (there are no users yet), so tests scope
-        // themselves with a unique marker to stay isolated from each other.
-        var marker = Guid.NewGuid().ToString("N")[..8];
+        // Lists are per-user now, so a fresh user is a clean slate — the
+        // unique-marker trick from before auth is no longer needed.
+        var (client, _) = await factory.CreateAuthedClientAsync();
         for (var i = 0; i < 3; i++)
         {
-            await client.CreateNoteAsync(title: $"note {marker} {i}");
+            await client.CreateNoteAsync(title: $"note {i}");
         }
 
-        var firstPage = await client.GetAsync($"/v1/notes?q={marker}&limit=2&offset=0");
+        var firstPage = await client.GetAsync("/v1/notes?limit=2&offset=0");
         Assert.Equal(HttpStatusCode.OK, firstPage.StatusCode);
         using (var json = await ApiClient.ReadJsonAsync(firstPage))
         {
@@ -26,7 +25,7 @@ public sealed class NoteListTests : IClassFixture<NotesApiFactory>
             Assert.Equal(2, json.RootElement.GetProperty("items").GetArrayLength());
         }
 
-        var secondPage = await client.GetAsync($"/v1/notes?q={marker}&limit=2&offset=2");
+        var secondPage = await client.GetAsync("/v1/notes?limit=2&offset=2");
         using (var json = await ApiClient.ReadJsonAsync(secondPage))
         {
             Assert.Equal(3, json.RootElement.GetProperty("count").GetInt32());
@@ -37,7 +36,7 @@ public sealed class NoteListTests : IClassFixture<NotesApiFactory>
     [Fact]
     public async Task Search_matches_title_and_body_case_insensitively()
     {
-        var client = factory.CreateClient();
+        var (client, _) = await factory.CreateAuthedClientAsync();
         await client.CreateNoteAsync(title: "Grocery list", body: "eggs, flour");
         await client.CreateNoteAsync(title: "Standup", body: "need GROCERIES after work");
         await client.CreateNoteAsync(title: "Unrelated", body: "nothing here");

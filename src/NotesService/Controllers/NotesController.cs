@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using NotesService.Auth;
 using NotesService.Contracts;
 using NotesService.Data;
 using NotesService.Domain;
@@ -7,6 +9,7 @@ using NotesService.Domain;
 namespace NotesService.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("v1/notes")]
 public sealed class NotesController : ControllerBase
 {
@@ -32,6 +35,7 @@ public sealed class NotesController : ControllerBase
         var now = DateTime.UtcNow;
         var note = new NoteEntity
         {
+            OwnerId = User.UserId(),
             Title = title,
             Body = body,
             CreatedAt = now,
@@ -60,7 +64,10 @@ public sealed class NotesController : ControllerBase
             return BadRequest(new { error = "offset must be a non-negative integer" });
         }
 
-        var query = db.Notes.AsNoTracking().AsQueryable();
+        var userId = User.UserId();
+        var query = db.Notes
+            .AsNoTracking()
+            .Where(note => note.OwnerId == userId);
 
         var normalizedQuery = q?.Trim().ToLowerInvariant();
         if (!string.IsNullOrEmpty(normalizedQuery))
@@ -86,14 +93,20 @@ public sealed class NotesController : ControllerBase
     public async Task<IActionResult> Get(string id, CancellationToken cancellationToken)
     {
         var note = await db.Notes.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
-        return note is null ? NotFound() : Ok(note.ToResponse());
+        if (note is null || note.OwnerId != User.UserId())
+        {
+            // 404, not 403: the API must not confirm the note exists.
+            return NotFound();
+        }
+
+        return Ok(note.ToResponse());
     }
 
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(string id, CancellationToken cancellationToken)
     {
         var note = await db.Notes.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
-        if (note is null)
+        if (note is null || note.OwnerId != User.UserId())
         {
             return NotFound();
         }

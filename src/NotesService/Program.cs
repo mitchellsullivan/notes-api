@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using NotesService.Auth;
 using NotesService.Data;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -12,9 +14,19 @@ var connectionString = ResolveConnectionString(
 EnsureDataDirectory(connectionString);
 builder.Services.AddDbContext<NotesDbContext>(options => options.UseSqlite(connectionString));
 
+builder.Services
+    .AddAuthentication(BearerTokenAuthenticationHandler.SchemeName)
+    .AddScheme<AuthenticationSchemeOptions, BearerTokenAuthenticationHandler>(
+        BearerTokenAuthenticationHandler.SchemeName,
+        _ => { });
+
+builder.Services.AddAuthorization();
+
 var app = builder.Build();
 
 app.MapGet("/healthz", () => new { status = "ok" });
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapControllers();
 
 using (var scope = app.Services.CreateScope())

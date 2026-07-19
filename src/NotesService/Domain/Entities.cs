@@ -20,6 +20,7 @@ public sealed class NoteEntity
     public string Body { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public int Version { get; set; } = 1;
 
     public UserEntity Owner { get; set; } = null!;
 }

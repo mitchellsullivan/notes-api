@@ -39,11 +39,13 @@ public sealed class NotesController : ControllerBase
             Title = title,
             Body = body,
             CreatedAt = now,
-            UpdatedAt = now
+            UpdatedAt = now,
+            Version = 1
         };
 
         db.Notes.Add(note);
         await db.SaveChangesAsync(cancellationToken);
+        SetEtag(note.Version);
         return StatusCode(StatusCodes.Status201Created, note.ToResponse());
     }
 
@@ -99,6 +101,60 @@ public sealed class NotesController : ControllerBase
             return NotFound();
         }
 
+        SetEtag(note.Version);
+        return Ok(note.ToResponse());
+    }
+
+    [HttpPatch("{id}")]
+    public async Task<IActionResult> Update(
+        string id,
+        UpdateNoteRequest request,
+        CancellationToken cancellationToken)
+    {
+        var note = await db.Notes.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (note is null || note.OwnerId != User.UserId())
+        {
+            return NotFound();
+        }
+
+        if (!TryReadIfMatch(out var expectedVersion, out var preconditionError))
+        {
+            return preconditionError!;
+        }
+
+        if (expectedVersion != note.Version)
+        {
+            return VersionConflict();
+        }
+
+        if (request.Title is null && request.Body is null)
+        {
+            return BadRequest(new { error = "nothing to update: provide title and/or body" });
+        }
+
+        var title = request.Title is null ? note.Title : request.Title.Trim();
+        var body = request.Body ?? note.Body;
+        if (!TryValidateNote(title, body, out var message))
+        {
+            return BadRequest(new { error = message });
+        }
+
+        db.Entry(note).Property(x => x.Version).OriginalValue = expectedVersion;
+        note.Title = title;
+        note.Body = body;
+        note.UpdatedAt = DateTime.UtcNow;
+        note.Version++;
+
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return VersionConflict();
+        }
+
+        SetEtag(note.Version);
         return Ok(note.ToResponse());
     }
 
@@ -111,10 +167,54 @@ public sealed class NotesController : ControllerBase
             return NotFound();
         }
 
+        if (!TryReadIfMatch(out var expectedVersion, out var preconditionError))
+        {
+            return preconditionError!;
+        }
+
+        if (expectedVersion != note.Version)
+        {
+            return VersionConflict();
+        }
+
+        db.Entry(note).Property(x => x.Version).OriginalValue = expectedVersion;
         db.Notes.Remove(note);
-        await db.SaveChangesAsync(cancellationToken);
+
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return VersionConflict();
+        }
+
         return NoContent();
     }
+
+    private bool TryReadIfMatch(out int version, out IActionResult? error)
+    {
+        var raw = Request.Headers.IfMatch.ToString().Trim();
+        if (raw.Length < 3 || raw[0] != '"' || raw[^1] != '"' ||
+            !int.TryParse(raw[1..^1], out version) || version < 1)
+        {
+            error = StatusCode(
+                StatusCodes.Status428PreconditionRequired,
+                new { error = "If-Match must contain the note's ETag, e.g. If-Match: \"3\"" });
+            version = 0;
+            return false;
+        }
+
+        error = null;
+        return true;
+    }
+
+    private ObjectResult VersionConflict() =>
+        StatusCode(
+            StatusCodes.Status412PreconditionFailed,
+            new { error = "the note was modified by another request; re-fetch and retry" });
+
+    private void SetEtag(int version) => Response.Headers.ETag = $"\"{version}\"";
 
     private static bool TryValidateNote(string title, string body, out string message)
     {

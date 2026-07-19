@@ -35,6 +35,32 @@ public static class ApiClient
         return json.RootElement.GetProperty("id").GetString()!;
     }
 
+    /// <summary>Builds a request manually — PATCH-with-JSON and If-Match aren't
+    /// covered by the built-in convenience extensions on .NET 6.</summary>
+    public static Task<HttpResponseMessage> SendJsonAsync(
+        this HttpClient client,
+        HttpMethod method,
+        string url,
+        object? payload = null,
+        string? ifMatch = null)
+    {
+        var request = new HttpRequestMessage(method, url);
+        if (payload is not null)
+        {
+            request.Content = JsonContent.Create(payload);
+        }
+
+        if (ifMatch is not null)
+        {
+            request.Headers.TryAddWithoutValidation("If-Match", ifMatch);
+        }
+
+        return client.SendAsync(request);
+    }
+
     public static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response) =>
         JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+    public static string? Etag(this HttpResponseMessage response) =>
+        response.Headers.ETag?.Tag;
 }

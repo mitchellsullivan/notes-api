@@ -10,3 +10,9 @@ public sealed class CreateNoteRequest
     public string? Title { get; set; }
     public string? Body { get; set; }
 }
+
+public sealed class UpdateNoteRequest
+{
+    public string? Title { get; set; }
+    public string? Body { get; set; }
+}

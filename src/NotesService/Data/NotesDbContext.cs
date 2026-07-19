@@ -32,6 +32,7 @@ public sealed class NotesDbContext : DbContext
             entity.Property(x => x.Id).HasMaxLength(32);
             entity.Property(x => x.Title).HasMaxLength(ApiLimits.MaxTitleRunes).IsRequired();
             entity.Property(x => x.Body).HasMaxLength(ApiLimits.MaxContentRunes).IsRequired();
+            entity.Property(x => x.Version).IsConcurrencyToken();
             entity.HasIndex(x => x.UpdatedAt);
             entity.HasOne(x => x.Owner)
                 .WithMany(x => x.OwnedNotes)

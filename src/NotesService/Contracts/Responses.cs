@@ -10,7 +10,8 @@ public sealed record NoteResponse(
     string Title,
     string Body,
     DateTime CreatedAt,
-    DateTime UpdatedAt);
+    DateTime UpdatedAt,
+    int Version);
 
 public sealed record NotesPageResponse(
     IReadOnlyList<NoteResponse> Items,
@@ -24,5 +25,12 @@ public static class ResponseMappings
         new(user.Id, user.Name, user.CreatedAt);
 
     public static NoteResponse ToResponse(this NoteEntity note) =>
-        new(note.Id, note.OwnerId, note.Title, note.Body, note.CreatedAt, note.UpdatedAt);
+        new(
+            note.Id,
+            note.OwnerId,
+            note.Title,
+            note.Body,
+            note.CreatedAt,
+            note.UpdatedAt,
+            note.Version);
 }

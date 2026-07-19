@@ -12,6 +12,7 @@ public sealed class NotesDbContext : DbContext
 
     public DbSet<UserEntity> Users => Set<UserEntity>();
     public DbSet<NoteEntity> Notes => Set<NoteEntity>();
+    public DbSet<UserNoteShareEntity> UserNoteShares => Set<UserNoteShareEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -37,6 +38,24 @@ public sealed class NotesDbContext : DbContext
             entity.HasOne(x => x.Owner)
                 .WithMany(x => x.OwnedNotes)
                 .HasForeignKey(x => x.OwnerId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<UserNoteShareEntity>(entity =>
+        {
+            entity.ToTable("user_note_shares");
+            entity.HasCheckConstraint(
+                "CK_user_note_shares_permission",
+                "\"Permission\" IN (1, 2)");
+            entity.HasKey(x => new { x.NoteId, x.UserId });
+            entity.Property(x => x.Permission).HasConversion<int>();
+            entity.HasOne(x => x.Note)
+                .WithMany(x => x.UserShares)
+                .HasForeignKey(x => x.NoteId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
     }

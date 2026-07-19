@@ -8,6 +8,7 @@ using NotesService.Auth;
 using NotesService.Data;
 using NotesService.Errors;
 using NotesService.Serialization;
+using NotesService.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -41,6 +42,8 @@ var connectionString = ResolveConnectionString(
     builder.Environment.ContentRootPath);
 EnsureDataDirectory(connectionString);
 builder.Services.AddDbContext<NotesDbContext>(options => options.UseSqlite(connectionString));
+
+builder.Services.AddScoped<NoteAccessService>();
 
 builder.Services
     .AddAuthentication(BearerTokenAuthenticationHandler.SchemeName)

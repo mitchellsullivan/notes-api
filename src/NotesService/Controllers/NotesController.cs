@@ -5,6 +5,7 @@ using NotesService.Auth;
 using NotesService.Contracts;
 using NotesService.Data;
 using NotesService.Domain;
+using NotesService.Services;
 
 namespace NotesService.Controllers;
 
@@ -13,10 +14,12 @@ namespace NotesService.Controllers;
 public sealed class NotesController : ApiControllerBase
 {
     private readonly NotesDbContext db;
+    private readonly NoteAccessService access;
 
-    public NotesController(NotesDbContext db)
+    public NotesController(NotesDbContext db, NoteAccessService access)
     {
         this.db = db;
+        this.access = access;
     }
 
     [HttpPost]
@@ -68,7 +71,9 @@ public sealed class NotesController : ApiControllerBase
         var userId = User.UserId();
         var query = db.Notes
             .AsNoTracking()
-            .Where(note => note.OwnerId == userId);
+            .Where(note =>
+                note.OwnerId == userId ||
+                note.UserShares.Any(share => share.UserId == userId));
 
         var normalizedQuery = q?.Trim().ToLowerInvariant();
         if (!string.IsNullOrEmpty(normalizedQuery))
@@ -94,14 +99,20 @@ public sealed class NotesController : ApiControllerBase
     public async Task<IActionResult> Get(string id, CancellationToken cancellationToken)
     {
         var note = await db.Notes.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
-        if (note is null || note.OwnerId != User.UserId())
+        if (note is null)
+        {
+            return NotFoundError("note not found");
+        }
+
+        var permission = await access.GetPermissionAsync(id, User.UserId(), cancellationToken);
+        if (permission is null)
         {
             // 404, not 403: the API must not confirm the note exists.
             return NotFoundError("note not found");
         }
 
         SetEtag(note.Version);
-        return Ok(note.ToResponse());
+        return Ok(new { note = note.ToResponse(), my_permission = permission.Value.ToApiValue() });
     }
 
     [HttpPatch("{id}")]
@@ -111,9 +122,20 @@ public sealed class NotesController : ApiControllerBase
         CancellationToken cancellationToken)
     {
         var note = await db.Notes.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
-        if (note is null || note.OwnerId != User.UserId())
+        if (note is null)
         {
             return NotFoundError("note not found");
+        }
+
+        var permission = await access.GetPermissionAsync(id, User.UserId(), cancellationToken);
+        if (permission is null)
+        {
+            return NotFoundError("note not found");
+        }
+
+        if (permission != PermissionLevel.Edit)
+        {
+            return ForbiddenError("you have read-only access to this note");
         }
 
         if (!TryReadIfMatch(out var expectedVersion, out var preconditionError))
@@ -161,9 +183,20 @@ public sealed class NotesController : ApiControllerBase
     public async Task<IActionResult> Delete(string id, CancellationToken cancellationToken)
     {
         var note = await db.Notes.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
-        if (note is null || note.OwnerId != User.UserId())
+        if (note is null)
         {
             return NotFoundError("note not found");
+        }
+
+        var permission = await access.GetPermissionAsync(id, User.UserId(), cancellationToken);
+        if (permission is null)
+        {
+            return NotFoundError("note not found");
+        }
+
+        if (note.OwnerId != User.UserId())
+        {
+            return ForbiddenError("only the owner can delete a note");
         }
 
         if (!TryReadIfMatch(out var expectedVersion, out var preconditionError))

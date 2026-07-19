@@ -25,3 +25,14 @@ public sealed class UpdateNoteRequest : JsonRequest
     public string? Title { get; set; }
     public string? Body { get; set; }
 }
+
+public sealed class ShareNoteRequest : JsonRequest
+{
+    public string? UserId { get; set; }
+    public string? Permission { get; set; }
+}
+
+public sealed class UnshareNoteRequest : JsonRequest
+{
+    public string? UserId { get; set; }
+}

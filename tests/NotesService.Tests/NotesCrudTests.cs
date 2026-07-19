@@ -76,17 +76,18 @@ public sealed class NotesCrudTests : IClassFixture<NotesApiFactory>
     }
 
     [Fact]
-    public async Task Get_returns_the_note()
+    public async Task Get_own_note_reports_edit_permission()
     {
         var (client, _) = await factory.CreateAuthedClientAsync();
-        var noteId = await client.CreateNoteAsync(title: "fetch me");
+        var noteId = await client.CreateNoteAsync();
 
         var response = await client.GetAsync($"/v1/notes/{noteId}");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("\"1\"", response.Etag());
 
         using var json = await ApiClient.ReadJsonAsync(response);
-        Assert.Equal("fetch me", json.RootElement.GetProperty("title").GetString());
+        Assert.Equal("edit", json.RootElement.GetProperty("my_permission").GetString());
+        Assert.Equal(noteId, json.RootElement.GetProperty("note").GetProperty("id").GetString());
     }
 
     [Fact]
@@ -178,5 +179,22 @@ public sealed class NotesCrudTests : IClassFixture<NotesApiFactory>
 
         var gone = await client.GetAsync($"/v1/notes/{noteId}");
         await ApiClient.AssertErrorAsync(gone, 404, "not_found");
+    }
+
+    [Fact]
+    public async Task Only_the_owner_can_delete_even_with_edit_share()
+    {
+        var (owner, _) = await factory.CreateAuthedClientAsync("owner");
+        var noteId = await owner.CreateNoteAsync();
+
+        var (editor, editorId) = await factory.CreateAuthedClientAsync("editor");
+        var share = await owner.PostAsJsonAsync(
+            $"/v1/notes/{noteId}/shares", new { user_id = editorId, permission = "edit" });
+        Assert.Equal(HttpStatusCode.Created, share.StatusCode);
+
+        // Editor can see the note, so this is a 403, not a 404.
+        var response = await editor.SendJsonAsync(
+            HttpMethod.Delete, $"/v1/notes/{noteId}", ifMatch: "\"1\"");
+        await ApiClient.AssertErrorAsync(response, 403, "forbidden");
     }
 }

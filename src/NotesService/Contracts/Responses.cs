@@ -13,6 +13,12 @@ public sealed record NoteResponse(
     DateTime UpdatedAt,
     int Version);
 
+public sealed record ShareResponse(
+    string NoteId,
+    string? UserId,
+    string Permission,
+    DateTime CreatedAt);
+
 public sealed record NotesPageResponse(
     IReadOnlyList<NoteResponse> Items,
     int Count,
@@ -33,4 +39,7 @@ public static class ResponseMappings
             note.CreatedAt,
             note.UpdatedAt,
             note.Version);
+
+    public static ShareResponse ToResponse(this UserNoteShareEntity share) =>
+        new(share.NoteId, share.UserId, share.Permission.ToApiValue(), share.CreatedAt);
 }

@@ -59,4 +59,26 @@ public sealed class NoteListTests : IClassFixture<NotesApiFactory>
         using var json = await ApiClient.ReadJsonAsync(response);
         Assert.Equal(2, json.RootElement.GetProperty("count").GetInt32());
     }
+
+    [Fact]
+    public async Task List_includes_notes_shared_directly()
+    {
+        var (owner, _) = await factory.CreateAuthedClientAsync("owner");
+        var (member, memberId) = await factory.CreateAuthedClientAsync("member");
+
+        var noteId = await owner.CreateNoteAsync(title: "direct share");
+        var share = await owner.PostAsJsonAsync(
+            $"/v1/notes/{noteId}/shares", new { user_id = memberId, permission = "read" });
+        Assert.Equal(HttpStatusCode.Created, share.StatusCode);
+
+        var response = await member.GetAsync("/v1/notes");
+        using var json = await ApiClient.ReadJsonAsync(response);
+        var ids = json.RootElement.GetProperty("items").EnumerateArray()
+            .Select(item => item.GetProperty("id").GetString())
+            .ToArray();
+
+        Assert.Contains(noteId, ids);
+        // The member's own list contains nothing else.
+        Assert.Equal(1, json.RootElement.GetProperty("count").GetInt32());
+    }
 }

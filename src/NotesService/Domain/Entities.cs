@@ -23,4 +23,16 @@ public sealed class NoteEntity
     public int Version { get; set; } = 1;
 
     public UserEntity Owner { get; set; } = null!;
+    public ICollection<UserNoteShareEntity> UserShares { get; set; } = new List<UserNoteShareEntity>();
+}
+
+public sealed class UserNoteShareEntity
+{
+    public string NoteId { get; set; } = null!;
+    public string UserId { get; set; } = null!;
+    public PermissionLevel Permission { get; set; }
+    public DateTime CreatedAt { get; set; }
+
+    public NoteEntity Note { get; set; } = null!;
+    public UserEntity User { get; set; } = null!;
 }

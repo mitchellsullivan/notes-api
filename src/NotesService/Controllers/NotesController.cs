@@ -8,10 +8,9 @@ using NotesService.Domain;
 
 namespace NotesService.Controllers;
 
-[ApiController]
 [Authorize]
 [Route("v1/notes")]
-public sealed class NotesController : ControllerBase
+public sealed class NotesController : ApiControllerBase
 {
     private readonly NotesDbContext db;
 
@@ -29,7 +28,7 @@ public sealed class NotesController : ControllerBase
         var body = request.Body ?? string.Empty;
         if (!TryValidateNote(title, body, out var message))
         {
-            return BadRequest(new { error = message });
+            return ValidationError(message);
         }
 
         var now = DateTime.UtcNow;
@@ -58,12 +57,12 @@ public sealed class NotesController : ControllerBase
     {
         if (limit is < 1 or > ApiLimits.MaxPageLimit)
         {
-            return BadRequest(new { error = $"limit must be an integer between 1 and {ApiLimits.MaxPageLimit}" });
+            return ValidationError($"limit must be an integer between 1 and {ApiLimits.MaxPageLimit}");
         }
 
         if (offset < 0)
         {
-            return BadRequest(new { error = "offset must be a non-negative integer" });
+            return ValidationError("offset must be a non-negative integer");
         }
 
         var userId = User.UserId();
@@ -98,7 +97,7 @@ public sealed class NotesController : ControllerBase
         if (note is null || note.OwnerId != User.UserId())
         {
             // 404, not 403: the API must not confirm the note exists.
-            return NotFound();
+            return NotFoundError("note not found");
         }
 
         SetEtag(note.Version);
@@ -114,7 +113,7 @@ public sealed class NotesController : ControllerBase
         var note = await db.Notes.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (note is null || note.OwnerId != User.UserId())
         {
-            return NotFound();
+            return NotFoundError("note not found");
         }
 
         if (!TryReadIfMatch(out var expectedVersion, out var preconditionError))
@@ -129,14 +128,14 @@ public sealed class NotesController : ControllerBase
 
         if (request.Title is null && request.Body is null)
         {
-            return BadRequest(new { error = "nothing to update: provide title and/or body" });
+            return ValidationError("nothing to update: provide title and/or body");
         }
 
         var title = request.Title is null ? note.Title : request.Title.Trim();
         var body = request.Body ?? note.Body;
         if (!TryValidateNote(title, body, out var message))
         {
-            return BadRequest(new { error = message });
+            return ValidationError(message);
         }
 
         db.Entry(note).Property(x => x.Version).OriginalValue = expectedVersion;
@@ -164,7 +163,7 @@ public sealed class NotesController : ControllerBase
         var note = await db.Notes.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (note is null || note.OwnerId != User.UserId())
         {
-            return NotFound();
+            return NotFoundError("note not found");
         }
 
         if (!TryReadIfMatch(out var expectedVersion, out var preconditionError))
@@ -198,9 +197,10 @@ public sealed class NotesController : ControllerBase
         if (raw.Length < 3 || raw[0] != '"' || raw[^1] != '"' ||
             !int.TryParse(raw[1..^1], out version) || version < 1)
         {
-            error = StatusCode(
+            error = Error(
                 StatusCodes.Status428PreconditionRequired,
-                new { error = "If-Match must contain the note's ETag, e.g. If-Match: \"3\"" });
+                "precondition_required",
+                "If-Match must contain the note's ETag, e.g. If-Match: \"3\"");
             version = 0;
             return false;
         }
@@ -208,11 +208,6 @@ public sealed class NotesController : ControllerBase
         error = null;
         return true;
     }
-
-    private ObjectResult VersionConflict() =>
-        StatusCode(
-            StatusCodes.Status412PreconditionFailed,
-            new { error = "the note was modified by another request; re-fetch and retry" });
 
     private void SetEtag(int version) => Response.Headers.ETag = $"\"{version}\"";
 

@@ -17,10 +17,11 @@ public sealed class AuthTests : IClassFixture<NotesApiFactory>
     }
 
     [Fact]
-    public async Task Missing_token_yields_401()
+    public async Task Missing_token_yields_401_with_www_authenticate()
     {
         var response = await factory.CreateClient().GetAsync("/v1/me");
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        await ApiClient.AssertErrorAsync(response, 401, "unauthorized");
+        Assert.Contains(response.Headers.WwwAuthenticate, header => header.Scheme == "Bearer");
     }
 
     [Fact]
@@ -30,7 +31,7 @@ public sealed class AuthTests : IClassFixture<NotesApiFactory>
         client.DefaultRequestHeaders.TryAddWithoutValidation(
             "Authorization", "Bearer " + new string('a', 64));
         var response = await client.GetAsync("/v1/me");
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        await ApiClient.AssertErrorAsync(response, 401, "unauthorized");
     }
 
     [Fact]
@@ -63,9 +64,17 @@ public sealed class AuthTests : IClassFixture<NotesApiFactory>
         var client = factory.CreateClient();
 
         var empty = await client.PostAsJsonAsync("/v1/users", new { name = "   " });
-        Assert.Equal(HttpStatusCode.BadRequest, empty.StatusCode);
+        await ApiClient.AssertErrorAsync(empty, 422, "validation_error");
 
         var tooLong = await client.PostAsJsonAsync("/v1/users", new { name = new string('x', 101) });
-        Assert.Equal(HttpStatusCode.BadRequest, tooLong.StatusCode);
+        await ApiClient.AssertErrorAsync(tooLong, 422, "validation_error");
+    }
+
+    [Fact]
+    public async Task Unknown_json_fields_are_rejected()
+    {
+        var client = factory.CreateClient();
+        var response = await client.PostAsJsonAsync("/v1/users", new { name = "bob", role = "admin" });
+        await ApiClient.AssertErrorAsync(response, 400, "invalid_request");
     }
 }

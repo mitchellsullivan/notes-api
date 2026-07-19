@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace NotesService.Tests;
 
 public sealed class NotesCrudTests : IClassFixture<NotesApiFactory>
@@ -20,7 +22,7 @@ public sealed class NotesCrudTests : IClassFixture<NotesApiFactory>
         var root = json.RootElement;
         Assert.Equal("standup", root.GetProperty("title").GetString()); // trimmed
         Assert.Equal("blockers: none", root.GetProperty("body").GetString());
-        Assert.Equal(userId, root.GetProperty("ownerId").GetString());
+        Assert.Equal(userId, root.GetProperty("owner_id").GetString());
         Assert.Equal(1, root.GetProperty("version").GetInt32());
     }
 
@@ -30,11 +32,47 @@ public sealed class NotesCrudTests : IClassFixture<NotesApiFactory>
         var (client, _) = await factory.CreateAuthedClientAsync();
 
         var emptyTitle = await client.PostAsJsonAsync("/v1/notes", new { title = " ", body = "b" });
-        Assert.Equal(HttpStatusCode.BadRequest, emptyTitle.StatusCode);
+        await ApiClient.AssertErrorAsync(emptyTitle, 422, "validation_error");
 
         var longTitle = await client.PostAsJsonAsync(
             "/v1/notes", new { title = new string('t', 201), body = "b" });
-        Assert.Equal(HttpStatusCode.BadRequest, longTitle.StatusCode);
+        await ApiClient.AssertErrorAsync(longTitle, 422, "validation_error");
+
+        var unknownField = await client.PostAsJsonAsync(
+            "/v1/notes", new { title = "t", body = "b", pinned = true });
+        await ApiClient.AssertErrorAsync(unknownField, 400, "invalid_request");
+    }
+
+    [Fact]
+    public async Task Malformed_json_body_is_a_400()
+    {
+        var (client, _) = await factory.CreateAuthedClientAsync();
+
+        var malformed = await client.PostAsync(
+            "/v1/notes",
+            new StringContent("{not json", Encoding.UTF8, "application/json"));
+        await ApiClient.AssertErrorAsync(malformed, 400, "invalid_request");
+
+        // An empty-but-present JSON body is also malformed, not "no fields
+        // to update" — that distinction only applies to PATCH.
+        var empty = await client.PostAsync(
+            "/v1/notes",
+            new StringContent(string.Empty, Encoding.UTF8, "application/json"));
+        await ApiClient.AssertErrorAsync(empty, 400, "invalid_request");
+    }
+
+    [Fact]
+    public async Task Missing_content_type_is_415_not_our_error_envelope()
+    {
+        // No Content-Type at all means ASP.NET can't select an input
+        // formatter, so this is rejected before model binding runs —
+        // before RejectUnknownJsonFieldsFilter or the custom
+        // InvalidModelStateResponseFactory ever see the request. It is
+        // therefore a bare framework 415, not our JSON error envelope.
+        // This pins that as known, intentional behavior rather than a gap.
+        var (client, _) = await factory.CreateAuthedClientAsync();
+        var response = await client.PostAsync("/v1/notes", content: null);
+        Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
     }
 
     [Fact]
@@ -60,7 +98,7 @@ public sealed class NotesCrudTests : IClassFixture<NotesApiFactory>
         var (stranger, _) = await factory.CreateAuthedClientAsync("stranger");
         // 404, not 403: the API must not confirm the note exists.
         var response = await stranger.GetAsync($"/v1/notes/{noteId}");
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        await ApiClient.AssertErrorAsync(response, 404, "not_found");
     }
 
     [Fact]
@@ -71,11 +109,11 @@ public sealed class NotesCrudTests : IClassFixture<NotesApiFactory>
 
         var noHeader = await client.SendJsonAsync(
             HttpMethod.Patch, $"/v1/notes/{noteId}", new { body = "x" });
-        Assert.Equal((HttpStatusCode)428, noHeader.StatusCode);
+        await ApiClient.AssertErrorAsync(noHeader, 428, "precondition_required");
 
         var unquoted = await client.SendJsonAsync(
             HttpMethod.Patch, $"/v1/notes/{noteId}", new { body = "x" }, ifMatch: "1");
-        Assert.Equal((HttpStatusCode)428, unquoted.StatusCode);
+        await ApiClient.AssertErrorAsync(unquoted, 428, "precondition_required");
     }
 
     [Fact]
@@ -107,7 +145,7 @@ public sealed class NotesCrudTests : IClassFixture<NotesApiFactory>
         // A writer still holding version 1 must not clobber the update above.
         var stale = await client.SendJsonAsync(
             HttpMethod.Patch, $"/v1/notes/{noteId}", new { body = "lost update" }, ifMatch: "\"1\"");
-        Assert.Equal((HttpStatusCode)412, stale.StatusCode);
+        await ApiClient.AssertErrorAsync(stale, 412, "version_conflict");
     }
 
     [Fact]
@@ -118,7 +156,7 @@ public sealed class NotesCrudTests : IClassFixture<NotesApiFactory>
 
         var response = await client.SendJsonAsync(
             HttpMethod.Patch, $"/v1/notes/{noteId}", new { }, ifMatch: "\"1\"");
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        await ApiClient.AssertErrorAsync(response, 422, "validation_error");
     }
 
     [Fact]
@@ -128,17 +166,17 @@ public sealed class NotesCrudTests : IClassFixture<NotesApiFactory>
         var noteId = await client.CreateNoteAsync();
 
         var noHeader = await client.SendJsonAsync(HttpMethod.Delete, $"/v1/notes/{noteId}");
-        Assert.Equal((HttpStatusCode)428, noHeader.StatusCode);
+        await ApiClient.AssertErrorAsync(noHeader, 428, "precondition_required");
 
         var stale = await client.SendJsonAsync(
             HttpMethod.Delete, $"/v1/notes/{noteId}", ifMatch: "\"99\"");
-        Assert.Equal((HttpStatusCode)412, stale.StatusCode);
+        await ApiClient.AssertErrorAsync(stale, 412, "version_conflict");
 
         var deleted = await client.SendJsonAsync(
             HttpMethod.Delete, $"/v1/notes/{noteId}", ifMatch: "\"1\"");
         Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
 
         var gone = await client.GetAsync($"/v1/notes/{noteId}");
-        Assert.Equal(HttpStatusCode.NotFound, gone.StatusCode);
+        await ApiClient.AssertErrorAsync(gone, 404, "not_found");
     }
 }

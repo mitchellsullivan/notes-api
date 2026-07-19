@@ -1,12 +1,40 @@
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using NotesService;
 using NotesService.Auth;
 using NotesService.Data;
+using NotesService.Errors;
+using NotesService.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = ApiLimits.MaxBodyBytes;
+    options.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(5);
+    options.Limits.KeepAliveTimeout = TimeSpan.FromSeconds(60);
+});
+
+builder.Services
+    .AddControllers(options =>
+    {
+        options.Filters.Add<RejectUnknownJsonFieldsFilter>();
+    })
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.PropertyNamingPolicy = SnakeCaseNamingPolicy.Instance;
+        options.JsonSerializerOptions.DictionaryKeyPolicy = SnakeCaseNamingPolicy.Instance;
+        options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+    });
+
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = _ => new BadRequestObjectResult(
+        ApiErrors.Envelope("invalid_request", "request body is missing, malformed, or contains unsupported fields"));
+});
 
 var connectionString = ResolveConnectionString(
     builder.Configuration,
@@ -24,6 +52,7 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
+app.UseMiddleware<ApiExceptionMiddleware>();
 app.MapGet("/healthz", () => new { status = "ok" });
 app.UseAuthentication();
 app.UseAuthorization();

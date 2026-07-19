@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using NotesService.Data;
+using NotesService.Errors;
 
 namespace NotesService.Auth;
 
@@ -57,5 +58,20 @@ public sealed class BearerTokenAuthenticationHandler
         var identity = new ClaimsIdentity(claims, SchemeName);
         var principal = new ClaimsPrincipal(identity);
         return AuthenticateResult.Success(new AuthenticationTicket(principal, SchemeName));
+    }
+
+    protected override async Task HandleChallengeAsync(AuthenticationProperties properties)
+    {
+        Response.StatusCode = StatusCodes.Status401Unauthorized;
+        Response.Headers.WWWAuthenticate = SchemeName;
+        await Response.WriteAsJsonAsync(
+            ApiErrors.Envelope("unauthorized", "missing or invalid bearer token"));
+    }
+
+    protected override async Task HandleForbiddenAsync(AuthenticationProperties properties)
+    {
+        Response.StatusCode = StatusCodes.Status403Forbidden;
+        await Response.WriteAsJsonAsync(
+            ApiErrors.Envelope("forbidden", "you do not have permission to perform this action"));
     }
 }

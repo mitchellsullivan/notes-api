@@ -61,6 +61,14 @@ public static class ApiClient
     public static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response) =>
         JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
+    /// <summary>Asserts the status code and the error envelope's machine-readable code.</summary>
+    public static async Task AssertErrorAsync(HttpResponseMessage response, int status, string code)
+    {
+        Assert.Equal(status, (int)response.StatusCode);
+        using var json = await ReadJsonAsync(response);
+        Assert.Equal(code, json.RootElement.GetProperty("error").GetProperty("code").GetString());
+    }
+
     public static string? Etag(this HttpResponseMessage response) =>
         response.Headers.ETag?.Tag;
 }

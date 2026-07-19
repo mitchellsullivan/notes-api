@@ -9,8 +9,6 @@ public sealed class NoteListTests : IClassFixture<NotesApiFactory>
     [Fact]
     public async Task List_paginates_with_a_stable_total_count()
     {
-        // Lists are per-user now, so a fresh user is a clean slate — the
-        // unique-marker trick from before auth is no longer needed.
         var (client, _) = await factory.CreateAuthedClientAsync();
         for (var i = 0; i < 3; i++)
         {
@@ -31,6 +29,22 @@ public sealed class NoteListTests : IClassFixture<NotesApiFactory>
             Assert.Equal(3, json.RootElement.GetProperty("count").GetInt32());
             Assert.Equal(1, json.RootElement.GetProperty("items").GetArrayLength());
         }
+    }
+
+    [Fact]
+    public async Task List_validates_paging_parameters()
+    {
+        var (client, _) = await factory.CreateAuthedClientAsync();
+
+        await ApiClient.AssertErrorAsync(
+            await client.GetAsync("/v1/notes?limit=0"), 422, "validation_error");
+        await ApiClient.AssertErrorAsync(
+            await client.GetAsync("/v1/notes?limit=101"), 422, "validation_error");
+        await ApiClient.AssertErrorAsync(
+            await client.GetAsync("/v1/notes?offset=-1"), 422, "validation_error");
+        // Unbindable value is malformed input, not a validation failure.
+        await ApiClient.AssertErrorAsync(
+            await client.GetAsync("/v1/notes?limit=lots"), 400, "invalid_request");
     }
 
     [Fact]

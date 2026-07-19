@@ -9,9 +9,8 @@ using NotesService.Domain;
 
 namespace NotesService.Controllers;
 
-[ApiController]
 [Route("v1/users")]
-public sealed class UsersController : ControllerBase
+public sealed class UsersController : ApiControllerBase
 {
     private readonly NotesDbContext db;
 
@@ -19,7 +18,6 @@ public sealed class UsersController : ControllerBase
     {
         this.db = db;
     }
-
     [AllowAnonymous]
     [HttpPost]
     public async Task<IActionResult> Create(
@@ -30,7 +28,7 @@ public sealed class UsersController : ControllerBase
         var nameLength = name.EnumerateRunes().Count();
         if (nameLength is < 1 or > ApiLimits.MaxNameRunes)
         {
-            return BadRequest(new { error = $"name must be between 1 and {ApiLimits.MaxNameRunes} characters" });
+            return ValidationError($"name must be between 1 and {ApiLimits.MaxNameRunes} characters");
         }
 
         var token = TokenService.CreateToken();
@@ -50,10 +48,9 @@ public sealed class UsersController : ControllerBase
     }
 }
 
-[ApiController]
 [Authorize]
 [Route("v1/me")]
-public sealed class MeController : ControllerBase
+public sealed class MeController : ApiControllerBase
 {
     private readonly NotesDbContext db;
 
@@ -61,7 +58,6 @@ public sealed class MeController : ControllerBase
     {
         this.db = db;
     }
-
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken cancellationToken)
     {

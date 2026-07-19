@@ -63,3 +63,6 @@ static void EnsureDataDirectory(string connectionString)
         Directory.CreateDirectory(directory);
     }
 }
+
+// Exposed so the test project can reference Program via WebApplicationFactory<Program>.
+public partial class Program { }

@@ -72,7 +72,11 @@ public sealed class SharingTests : IClassFixture<NotesApiFactory>
         var noteId = await owner.CreateNoteAsync();
         var (_, otherId) = await factory.CreateAuthedClientAsync("other");
 
-        // A target user is required.
+        // Exactly one of user_id / team_id.
+        await ApiClient.AssertErrorAsync(
+            await owner.PostAsJsonAsync($"/v1/notes/{noteId}/shares",
+                new { user_id = otherId, team_id = "t", permission = "read" }),
+            422, "validation_error");
         await ApiClient.AssertErrorAsync(
             await owner.PostAsJsonAsync($"/v1/notes/{noteId}/shares",
                 new { permission = "read" }),
@@ -144,5 +148,30 @@ public sealed class SharingTests : IClassFixture<NotesApiFactory>
             await owner.SendJsonAsync(
                 HttpMethod.Delete, $"/v1/notes/{noteId}/shares", new { user_id = readerId }),
             404, "not_found");
+    }
+
+    [Fact]
+    public async Task Share_listing_shows_user_and_team_grants()
+    {
+        var (owner, _) = await factory.CreateAuthedClientAsync("owner");
+        var noteId = await owner.CreateNoteAsync();
+        var (_, readerId) = await factory.CreateAuthedClientAsync("reader");
+        var teamId = await owner.CreateTeamAsync();
+
+        await owner.PostAsJsonAsync(
+            $"/v1/notes/{noteId}/shares", new { user_id = readerId, permission = "read" });
+        await owner.PostAsJsonAsync(
+            $"/v1/notes/{noteId}/shares", new { team_id = teamId, permission = "edit" });
+
+        var response = await owner.GetAsync($"/v1/notes/{noteId}/shares");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var json = await ApiClient.ReadJsonAsync(response);
+        var shares = json.RootElement.EnumerateArray().ToArray();
+        Assert.Equal(2, shares.Length);
+        Assert.Contains(shares, s =>
+            s.TryGetProperty("user_id", out var id) && id.GetString() == readerId);
+        Assert.Contains(shares, s =>
+            s.TryGetProperty("team_id", out var id) && id.GetString() == teamId);
     }
 }

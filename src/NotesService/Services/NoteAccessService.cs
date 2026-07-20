@@ -12,7 +12,6 @@ public sealed class NoteAccessService
     {
         this.db = db;
     }
-
     public async Task<PermissionLevel?> GetPermissionAsync(
         string noteId,
         string userId,
@@ -34,10 +33,33 @@ public sealed class NoteAccessService
             return PermissionLevel.Edit;
         }
 
-        return await db.UserNoteShares
+        var direct = await db.UserNoteShares
             .AsNoTracking()
             .Where(x => x.NoteId == noteId && x.UserId == userId)
             .Select(x => (PermissionLevel?)x.Permission)
             .SingleOrDefaultAsync(cancellationToken);
+
+        if (direct == PermissionLevel.Edit)
+        {
+            return PermissionLevel.Edit;
+        }
+
+        var teamPermissions = await db.TeamNoteShares
+            .AsNoTracking()
+            .Where(share =>
+                share.NoteId == noteId &&
+                share.Team.Members.Any(member => member.UserId == userId))
+            .Select(share => share.Permission)
+            .ToListAsync(cancellationToken);
+        var teamPermission = teamPermissions.Count == 0
+            ? (PermissionLevel?)null
+            : teamPermissions.Max();
+
+        if (teamPermission == PermissionLevel.Edit)
+        {
+            return PermissionLevel.Edit;
+        }
+
+        return direct ?? teamPermission;
     }
 }

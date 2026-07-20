@@ -61,15 +61,25 @@ public sealed class NoteListTests : IClassFixture<NotesApiFactory>
     }
 
     [Fact]
-    public async Task List_includes_notes_shared_directly()
+    public async Task List_includes_notes_shared_directly_and_via_team()
     {
         var (owner, _) = await factory.CreateAuthedClientAsync("owner");
         var (member, memberId) = await factory.CreateAuthedClientAsync("member");
 
-        var noteId = await owner.CreateNoteAsync(title: "direct share");
-        var share = await owner.PostAsJsonAsync(
-            $"/v1/notes/{noteId}/shares", new { user_id = memberId, permission = "read" });
-        Assert.Equal(HttpStatusCode.Created, share.StatusCode);
+        var directNoteId = await owner.CreateNoteAsync(title: "direct share");
+        var directShare = await owner.PostAsJsonAsync(
+            $"/v1/notes/{directNoteId}/shares", new { user_id = memberId, permission = "read" });
+        Assert.Equal(HttpStatusCode.Created, directShare.StatusCode);
+
+        var teamId = await owner.CreateTeamAsync();
+        var add = await owner.PostAsJsonAsync(
+            $"/v1/teams/{teamId}/members", new { user_id = memberId });
+        Assert.Equal(HttpStatusCode.OK, add.StatusCode);
+
+        var teamNoteId = await owner.CreateNoteAsync(title: "team share");
+        var teamShare = await owner.PostAsJsonAsync(
+            $"/v1/notes/{teamNoteId}/shares", new { team_id = teamId, permission = "read" });
+        Assert.Equal(HttpStatusCode.Created, teamShare.StatusCode);
 
         var response = await member.GetAsync("/v1/notes");
         using var json = await ApiClient.ReadJsonAsync(response);
@@ -77,8 +87,9 @@ public sealed class NoteListTests : IClassFixture<NotesApiFactory>
             .Select(item => item.GetProperty("id").GetString())
             .ToArray();
 
-        Assert.Contains(noteId, ids);
+        Assert.Contains(directNoteId, ids);
+        Assert.Contains(teamNoteId, ids);
         // The member's own list contains nothing else.
-        Assert.Equal(1, json.RootElement.GetProperty("count").GetInt32());
+        Assert.Equal(2, json.RootElement.GetProperty("count").GetInt32());
     }
 }

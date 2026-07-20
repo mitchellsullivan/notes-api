@@ -35,6 +35,14 @@ public static class ApiClient
         return json.RootElement.GetProperty("id").GetString()!;
     }
 
+    public static async Task<string> CreateTeamAsync(this HttpClient client, string name = "team")
+    {
+        var response = await client.PostAsJsonAsync("/v1/teams", new { name });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        using var json = await ReadJsonAsync(response);
+        return json.RootElement.GetProperty("id").GetString()!;
+    }
+
     /// <summary>Builds a request manually — PATCH-with-JSON and If-Match aren't
     /// covered by the built-in convenience extensions on .NET 6.</summary>
     public static Task<HttpResponseMessage> SendJsonAsync(

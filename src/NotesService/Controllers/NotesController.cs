@@ -73,7 +73,9 @@ public sealed class NotesController : ApiControllerBase
             .AsNoTracking()
             .Where(note =>
                 note.OwnerId == userId ||
-                note.UserShares.Any(share => share.UserId == userId));
+                note.UserShares.Any(share => share.UserId == userId) ||
+                note.TeamShares.Any(share =>
+                    share.Team.Members.Any(member => member.UserId == userId)));
 
         var normalizedQuery = q?.Trim().ToLowerInvariant();
         if (!string.IsNullOrEmpty(normalizedQuery))

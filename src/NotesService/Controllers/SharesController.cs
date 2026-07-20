@@ -21,7 +21,6 @@ public sealed class SharesController : ApiControllerBase
         this.db = db;
         this.access = access;
     }
-
     [HttpPost]
     public async Task<IActionResult> Share(
         string noteId,
@@ -34,9 +33,9 @@ public sealed class SharesController : ApiControllerBase
             return note.Result;
         }
 
-        if (string.IsNullOrWhiteSpace(request.UserId))
+        if (string.IsNullOrWhiteSpace(request.UserId) == string.IsNullOrWhiteSpace(request.TeamId))
         {
-            return ValidationError("user_id is required");
+            return ValidationError("provide exactly one of user_id or team_id");
         }
 
         if (!PermissionLevelExtensions.TryParseApiValue(request.Permission, out var permission))
@@ -44,35 +43,77 @@ public sealed class SharesController : ApiControllerBase
             return ValidationError("permission must be \"read\" or \"edit\"");
         }
 
-        if (request.UserId == User.UserId())
-        {
-            return ValidationError("cannot share a note with yourself");
-        }
-
-        if (!await db.Users.AnyAsync(x => x.Id == request.UserId, cancellationToken))
-        {
-            return NotFoundError();
-        }
-
         var now = DateTime.UtcNow;
-        var share = await db.UserNoteShares.SingleOrDefaultAsync(
-            x => x.NoteId == noteId && x.UserId == request.UserId,
-            cancellationToken);
-        var created = share is null;
-        if (share is null)
+        bool created;
+        if (!string.IsNullOrWhiteSpace(request.UserId))
         {
-            db.UserNoteShares.Add(new UserNoteShareEntity
+            if (request.UserId == User.UserId())
             {
-                NoteId = noteId,
-                UserId = request.UserId,
-                Permission = permission,
-                CreatedAt = now
-            });
+                return ValidationError("cannot share a note with yourself");
+            }
+
+            if (!await db.Users.AnyAsync(x => x.Id == request.UserId, cancellationToken))
+            {
+                return NotFoundError();
+            }
+
+            var share = await db.UserNoteShares.SingleOrDefaultAsync(
+                x => x.NoteId == noteId && x.UserId == request.UserId,
+                cancellationToken);
+            created = share is null;
+            if (share is null)
+            {
+                db.UserNoteShares.Add(new UserNoteShareEntity
+                {
+                    NoteId = noteId,
+                    UserId = request.UserId,
+                    Permission = permission,
+                    CreatedAt = now
+                });
+            }
+            else
+            {
+                share.Permission = permission;
+                share.CreatedAt = now;
+            }
         }
         else
         {
-            share.Permission = permission;
-            share.CreatedAt = now;
+            var team = await db.Teams
+                .AsNoTracking()
+                .Include(x => x.Members)
+                .SingleOrDefaultAsync(x => x.Id == request.TeamId, cancellationToken);
+            if (team is null)
+            {
+                return NotFoundError();
+            }
+
+            // A caller may only target a team they belong to. This prevents
+            // injecting notes into an unrelated team with a leaked team ID.
+            if (team.Members.All(member => member.UserId != User.UserId()))
+            {
+                return NotFoundError();
+            }
+
+            var share = await db.TeamNoteShares.SingleOrDefaultAsync(
+                x => x.NoteId == noteId && x.TeamId == request.TeamId,
+                cancellationToken);
+            created = share is null;
+            if (share is null)
+            {
+                db.TeamNoteShares.Add(new TeamNoteShareEntity
+                {
+                    NoteId = noteId,
+                    TeamId = request.TeamId!,
+                    Permission = permission,
+                    CreatedAt = now
+                });
+            }
+            else
+            {
+                share.Permission = permission;
+                share.CreatedAt = now;
+            }
         }
 
         await db.SaveChangesAsync(cancellationToken);
@@ -100,20 +141,34 @@ public sealed class SharesController : ApiControllerBase
             return note.Result;
         }
 
-        if (string.IsNullOrWhiteSpace(request.UserId))
+        if (string.IsNullOrWhiteSpace(request.UserId) == string.IsNullOrWhiteSpace(request.TeamId))
         {
-            return ValidationError("user_id is required");
+            return ValidationError("provide exactly one of user_id or team_id");
         }
 
-        var share = await db.UserNoteShares.SingleOrDefaultAsync(
-            x => x.NoteId == noteId && x.UserId == request.UserId,
-            cancellationToken);
-        if (share is null)
+        if (!string.IsNullOrWhiteSpace(request.UserId))
         {
-            return NotFoundError();
+            var share = await db.UserNoteShares.SingleOrDefaultAsync(
+                x => x.NoteId == noteId && x.UserId == request.UserId,
+                cancellationToken);
+            if (share is null)
+            {
+                return NotFoundError();
+            }
+            db.UserNoteShares.Remove(share);
+        }
+        else
+        {
+            var share = await db.TeamNoteShares.SingleOrDefaultAsync(
+                x => x.NoteId == noteId && x.TeamId == request.TeamId,
+                cancellationToken);
+            if (share is null)
+            {
+                return NotFoundError();
+            }
+            db.TeamNoteShares.Remove(share);
         }
 
-        db.UserNoteShares.Remove(share);
         await db.SaveChangesAsync(cancellationToken);
         return NoContent();
     }
@@ -140,15 +195,19 @@ public sealed class SharesController : ApiControllerBase
         string noteId,
         CancellationToken cancellationToken)
     {
-        var shareEntities = await db.UserNoteShares
+        var userShareEntities = await db.UserNoteShares
+            .AsNoTracking()
+            .Where(x => x.NoteId == noteId)
+            .ToListAsync(cancellationToken);
+        var teamShareEntities = await db.TeamNoteShares
             .AsNoTracking()
             .Where(x => x.NoteId == noteId)
             .ToListAsync(cancellationToken);
 
-        return shareEntities
-            .Select(x => x.ToResponse())
+        return userShareEntities.Select(x => x.ToResponse())
+            .Concat(teamShareEntities.Select(x => x.ToResponse()))
             .OrderBy(x => x.CreatedAt)
-            .ThenBy(x => x.UserId ?? string.Empty, StringComparer.Ordinal)
+            .ThenBy(x => x.UserId ?? x.TeamId ?? string.Empty, StringComparer.Ordinal)
             .ToArray();
     }
 }

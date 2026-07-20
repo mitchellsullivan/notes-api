@@ -4,6 +4,13 @@ namespace NotesService.Contracts;
 
 public sealed record UserResponse(string Id, string Name, DateTime CreatedAt);
 
+public sealed record TeamResponse(
+    string Id,
+    string Name,
+    string OwnerId,
+    DateTime CreatedAt,
+    IReadOnlyList<string> MemberIds);
+
 public sealed record NoteResponse(
     string Id,
     string OwnerId,
@@ -16,6 +23,7 @@ public sealed record NoteResponse(
 public sealed record ShareResponse(
     string NoteId,
     string? UserId,
+    string? TeamId,
     string Permission,
     DateTime CreatedAt);
 
@@ -30,6 +38,14 @@ public static class ResponseMappings
     public static UserResponse ToResponse(this UserEntity user) =>
         new(user.Id, user.Name, user.CreatedAt);
 
+    public static TeamResponse ToResponse(this TeamEntity team) =>
+        new(
+            team.Id,
+            team.Name,
+            team.OwnerId,
+            team.CreatedAt,
+            team.Members.Select(x => x.UserId).OrderBy(id => id, StringComparer.Ordinal).ToArray());
+
     public static NoteResponse ToResponse(this NoteEntity note) =>
         new(
             note.Id,
@@ -41,5 +57,8 @@ public static class ResponseMappings
             note.Version);
 
     public static ShareResponse ToResponse(this UserNoteShareEntity share) =>
-        new(share.NoteId, share.UserId, share.Permission.ToApiValue(), share.CreatedAt);
+        new(share.NoteId, share.UserId, null, share.Permission.ToApiValue(), share.CreatedAt);
+
+    public static ShareResponse ToResponse(this TeamNoteShareEntity share) =>
+        new(share.NoteId, null, share.TeamId, share.Permission.ToApiValue(), share.CreatedAt);
 }

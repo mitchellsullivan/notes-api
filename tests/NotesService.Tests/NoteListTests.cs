@@ -61,6 +61,20 @@ public sealed class NoteListTests : IClassFixture<NotesApiFactory>
     }
 
     [Fact]
+    public async Task Multi_word_search_requires_all_terms()
+    {
+        // Chosen so LIKE (substring) and Postgres FTS (all-terms prefix
+        // match) agree: only the first note satisfies both semantics.
+        var (client, _) = await factory.CreateAuthedClientAsync();
+        await client.CreateNoteAsync(title: "Grocery list", body: "eggs, flour");
+        await client.CreateNoteAsync(title: "Standup", body: "need GROCERIES after work");
+
+        var response = await client.GetAsync("/v1/notes?q=grocery%20list");
+        using var json = await ApiClient.ReadJsonAsync(response);
+        Assert.Equal(1, json.RootElement.GetProperty("count").GetInt32());
+    }
+
+    [Fact]
     public async Task List_includes_notes_shared_directly_and_via_team()
     {
         var (owner, _) = await factory.CreateAuthedClientAsync("owner");

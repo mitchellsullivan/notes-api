@@ -1,0 +1,31 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: notes
+      POSTGRES_PASSWORD: notes
+      POSTGRES_DB: notes
+    # Exposed so the test suite can target it from the host
+    # (see README "Tests"). Remove if you have a local Postgres on 5432.
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notes"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  api:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      POSTGRES_CONNECTION: "Host=db;Database=notes;Username=notes;Password=notes"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

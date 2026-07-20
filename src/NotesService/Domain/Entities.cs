@@ -1,3 +1,5 @@
+using NpgsqlTypes;
+
 namespace NotesService.Domain;
 
 public sealed class UserEntity
@@ -44,6 +46,12 @@ public sealed class NoteEntity
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public int Version { get; set; } = 1;
+
+    /// <summary>
+    /// Postgres-only: a database-generated tsvector over Title + Body,
+    /// indexed with GIN. Ignored entirely on the SQLite provider.
+    /// </summary>
+    public NpgsqlTsVector? SearchVector { get; set; }
 
     public UserEntity Owner { get; set; } = null!;
     public ICollection<UserNoteShareEntity> UserShares { get; set; } = new List<UserNoteShareEntity>();

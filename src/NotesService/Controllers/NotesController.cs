@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -21,7 +22,6 @@ public sealed class NotesController : ApiControllerBase
         this.db = db;
         this.access = access;
     }
-
     [HttpPost]
     public async Task<IActionResult> Create(
         CreateNoteRequest request,
@@ -80,9 +80,21 @@ public sealed class NotesController : ApiControllerBase
         var normalizedQuery = q?.Trim().ToLowerInvariant();
         if (!string.IsNullOrEmpty(normalizedQuery))
         {
-            query = query.Where(note =>
-                note.Title.ToLower().Contains(normalizedQuery) ||
-                note.Body.ToLower().Contains(normalizedQuery));
+            var tsQuery = BuildPrefixTsQuery(normalizedQuery);
+            if (tsQuery is not null && db.Database.IsNpgsql())
+            {
+                // Word/prefix search with stemming, served by the GIN index.
+                query = query.Where(note =>
+                    note.SearchVector!.Matches(EF.Functions.ToTsQuery("english", tsQuery)));
+            }
+            else
+            {
+                // Substring scan: right-sized for the SQLite profile, and the
+                // fallback when the query contains no indexable terms.
+                query = query.Where(note =>
+                    note.Title.ToLower().Contains(normalizedQuery) ||
+                    note.Body.ToLower().Contains(normalizedQuery));
+            }
         }
 
         var count = await query.CountAsync(cancellationToken);
@@ -109,7 +121,6 @@ public sealed class NotesController : ApiControllerBase
         var permission = await access.GetPermissionAsync(id, User.UserId(), cancellationToken);
         if (permission is null)
         {
-            // 404, not 403: the API must not confirm the note exists.
             return NotFoundError("note not found");
         }
 
@@ -245,6 +256,40 @@ public sealed class NotesController : ApiControllerBase
     }
 
     private void SetEtag(int version) => Response.Headers.ETag = $"\"{version}\"";
+
+    /// <summary>
+    /// Turns free-form user input into a safe prefix tsquery:
+    /// "grocery lis" -> "grocery:* &amp; lis:*". Only letters and digits
+    /// survive, so tsquery syntax characters in user input can never
+    /// produce a malformed query. Returns null when nothing survives
+    /// (e.g. all punctuation), in which case the caller falls back to LIKE.
+    /// </summary>
+    private static string? BuildPrefixTsQuery(string input)
+    {
+        var terms = new List<string>();
+        var current = new StringBuilder();
+        foreach (var character in input)
+        {
+            if (char.IsLetterOrDigit(character))
+            {
+                current.Append(character);
+            }
+            else if (current.Length > 0)
+            {
+                terms.Add(current.ToString());
+                current.Clear();
+            }
+        }
+
+        if (current.Length > 0)
+        {
+            terms.Add(current.ToString());
+        }
+
+        return terms.Count == 0
+            ? null
+            : string.Join(" & ", terms.Select(term => term + ":*"));
+    }
 
     private static bool TryValidateNote(string title, string body, out string message)
     {

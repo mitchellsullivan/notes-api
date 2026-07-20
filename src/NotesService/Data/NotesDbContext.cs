@@ -9,7 +9,6 @@ public sealed class NotesDbContext : DbContext
         : base(options)
     {
     }
-
     public DbSet<UserEntity> Users => Set<UserEntity>();
     public DbSet<TeamEntity> Teams => Set<TeamEntity>();
     public DbSet<TeamMemberEntity> TeamMembers => Set<TeamMemberEntity>();
@@ -64,6 +63,22 @@ public sealed class NotesDbContext : DbContext
             entity.Property(x => x.Body).HasMaxLength(ApiLimits.MaxContentRunes).IsRequired();
             entity.Property(x => x.Version).IsConcurrencyToken();
             entity.HasIndex(x => x.UpdatedAt);
+            if (Database.IsNpgsql())
+            {
+                // Database-maintained tsvector: Postgres recomputes it on
+                // every insert/update, so it can never drift from Title/Body
+                // the way an application-maintained index could.
+                entity.HasGeneratedTsVectorColumn(
+                        x => x.SearchVector!,
+                        "english",
+                        x => new { x.Title, x.Body })
+                    .HasIndex(x => x.SearchVector)
+                    .HasMethod("GIN");
+            }
+            else
+            {
+                entity.Ignore(x => x.SearchVector);
+            }
             entity.HasOne(x => x.Owner)
                 .WithMany(x => x.OwnedNotes)
                 .HasForeignKey(x => x.OwnerId)

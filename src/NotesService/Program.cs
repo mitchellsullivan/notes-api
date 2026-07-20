@@ -1,8 +1,10 @@
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using NotesService;
 using NotesService.Auth;
 using NotesService.Data;
@@ -37,13 +39,27 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
         ApiErrors.Envelope("invalid_request", "request body is missing, malformed, or contains unsupported fields"));
 });
 
-var connectionString = ResolveConnectionString(
-    builder.Configuration,
-    builder.Environment.ContentRootPath);
-EnsureDataDirectory(connectionString);
-builder.Services.AddDbContext<NotesDbContext>(options => options.UseSqlite(connectionString));
+// Postgres when a connection is configured (e.g. by docker-compose);
+// zero-dependency SQLite otherwise. The model is provider-agnostic, so
+// this is the only place the choice exists.
+var postgresConnection = builder.Configuration["POSTGRES_CONNECTION"]
+    ?? builder.Configuration.GetConnectionString("Postgres");
+
+if (!string.IsNullOrWhiteSpace(postgresConnection))
+{
+    builder.Services.AddDbContext<NotesDbContext>(options => options.UseNpgsql(postgresConnection));
+}
+else
+{
+    var connectionString = ResolveConnectionString(
+        builder.Configuration,
+        builder.Environment.ContentRootPath);
+    EnsureDataDirectory(connectionString);
+    builder.Services.AddDbContext<NotesDbContext>(options => options.UseSqlite(connectionString));
+}
 
 builder.Services.AddScoped<NoteAccessService>();
+builder.Services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database");
 
 builder.Services
     .AddAuthentication(BearerTokenAuthenticationHandler.SchemeName)
@@ -56,9 +72,18 @@ builder.Services.AddAuthorization();
 var app = builder.Build();
 
 app.UseMiddleware<ApiExceptionMiddleware>();
-app.MapGet("/healthz", () => new { status = "ok" });
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.MapHealthChecks("/healthz", new HealthCheckOptions
+{
+    ResponseWriter = async (context, report) =>
+    {
+        context.Response.ContentType = "application/json";
+        var status = report.Status == HealthStatus.Healthy ? "ok" : "unavailable";
+        await context.Response.WriteAsJsonAsync(new { status });
+    }
+});
 app.MapControllers();
 
 using (var scope = app.Services.CreateScope())

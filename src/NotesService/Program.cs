@@ -5,12 +5,14 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.OpenApi.Models;
 using NotesService;
 using NotesService.Auth;
 using NotesService.Data;
 using NotesService.Errors;
 using NotesService.Serialization;
 using NotesService.Services;
+using Swashbuckle.AspNetCore.SwaggerGen;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -69,9 +71,47 @@ builder.Services
 
 builder.Services.AddAuthorization();
 
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+    {
+        Title = "Notes Service",
+        Version = "v1"
+    });
+    options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+        Scheme = "bearer",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Description = "Paste the token returned by POST /v1/users (shown exactly once)."
+    });
+    options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    {
+        {
+            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                {
+                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+    options.SchemaFilter<HideUnmappedFieldsSchemaFilter>();
+});
+
 var app = builder.Build();
 
 app.UseMiddleware<ApiExceptionMiddleware>();
+// Deliberately enabled in all environments: containers default to
+// ASPNETCORE_ENVIRONMENT=Production, and reviewers running via Docker
+// should get the interactive docs too. A real deployment would gate this.
+app.UseSwagger();
+app.UseSwaggerUI();
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -133,5 +173,15 @@ static void EnsureDataDirectory(string connectionString)
     }
 }
 
-// Exposed so the test project can reference Program via WebApplicationFactory<Program>.
+public sealed class HideUnmappedFieldsSchemaFilter : ISchemaFilter
+{
+    public void Apply(OpenApiSchema schema, SchemaFilterContext context)
+    {
+        schema.Properties?.Remove("unmappedFields");
+        schema.Properties?.Remove("unmapped_fields");
+        schema.AdditionalPropertiesAllowed = false;
+        schema.AdditionalProperties = null;
+    }
+}
+
 public partial class Program { }

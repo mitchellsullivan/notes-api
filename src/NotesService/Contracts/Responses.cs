@@ -33,6 +33,8 @@ public sealed record NotesPageResponse(
     int Limit,
     int Offset);
 
+public sealed record NoteDetailResponse(NoteResponse Note, string MyPermission);
+
 public static class ResponseMappings
 {
     public static UserResponse ToResponse(this UserEntity user) =>

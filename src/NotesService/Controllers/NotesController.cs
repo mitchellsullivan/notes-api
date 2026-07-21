@@ -125,7 +125,7 @@ public sealed class NotesController : ApiControllerBase
         }
 
         SetEtag(note.Version);
-        return Ok(new { note = note.ToResponse(), my_permission = permission.Value.ToApiValue() });
+        return Ok(new NoteDetailResponse(note.ToResponse(), permission.Value.ToApiValue()));
     }
 
     [HttpPatch("{id}")]

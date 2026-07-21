@@ -64,3 +64,5 @@ public static class ResponseMappings
     public static ShareResponse ToResponse(this TeamNoteShareEntity share) =>
         new(share.NoteId, null, share.TeamId, share.Permission.ToApiValue(), share.CreatedAt);
 }
+
+public sealed record CreateUserResponse(UserResponse User, string Token);

@@ -44,7 +44,7 @@ public sealed class UsersController : ApiControllerBase
 
         return StatusCode(
             StatusCodes.Status201Created,
-            new { user = user.ToResponse(), token });
+            new CreateUserResponse(user.ToResponse(), token));
     }
 }
 

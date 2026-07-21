@@ -27,6 +27,13 @@ full-text search.
 - Opaque tokens over JWT, at the cost of one DB read per request — acceptable at this scale.
 - 404 instead of 403 when a caller lacks rights, so the API never confirms a resource exists.
 
+## With more time
+
+- Full User CRUD with password login, etc.
+- Token lifecycle (expiry, rotation, revocation)
+- EF migrations instead of `EnsureCreated`
+- Stop serving Swagger in production
+
 ## Run with Docker and Postgres (docker-compose)
 
 ```bash
@@ -45,7 +52,7 @@ GIN index; on SQLite it falls back to a substring scan.
 dotnet run --project src/NotesService
 ```
 
-Data lives in `./data/notes.db` (override the location with the `DATA_FILE`
+Starts the API on http://localhost:5000. Data lives in `./data/notes.db` (override the location with the `DATA_FILE`
 environment variable).
 
 ## API docs
@@ -96,9 +103,3 @@ Mutating note requests are optimistic-concurrency checked: send
 `If-Match: "&lt;version&gt;"` using the ETag returned by reads and writes.
 Errors are shaped as `{ "error": { "code", "message" } }`.
 
-## With more time
-
-- Full User CRUD with passwords, etc.
-- Token lifecycle (expiry, rotation, revocation)
-- EF migrations instead of `EnsureCreated`
-- Stop serving Swagger in production

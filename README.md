@@ -69,6 +69,7 @@ suite at a Postgres server:
 docker compose up -d db
 POSTGRES_TEST_CONNECTION="Host=localhost;Database=notes;Username=notes;Password=notes"
 dotnet test
+docker compose down
 ```
 
 Each test class then gets its own `notes_test_*` database, dropped when the

@@ -20,6 +20,7 @@ full-text search.
 
 ## Design choices
 
+- Is user management, full support for password login, etc., a primary concern, versus implementing the notes features? (I'll skip it.)
 - Is SQLite enough for the spec's "several small teams"? (Probably yes — but still used Postgres for release and FTS, with SQLite kept for zero-dependency dev and tests.)
 - Implement full-text search? (Yes — a Postgres tsvector with a GIN index, falling back to a substring scan on SQLite.)
 - Optimistic concurrency via ETag/`If-Match` rather than last-write-wins.
@@ -97,6 +98,7 @@ Errors are shaped as `{ "error": { "code", "message" } }`.
 
 ## With more time
 
-- EF migrations instead of `EnsureCreated`
+- Full User CRUD with passwords, etc.
 - Token lifecycle (expiry, rotation, revocation)
+- EF migrations instead of `EnsureCreated`
 - Stop serving Swagger in production

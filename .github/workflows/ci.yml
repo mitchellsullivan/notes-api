@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: notes
+          POSTGRES_PASSWORD: notes
+          POSTGRES_DB: notes
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U notes -d notes"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "6.0.x"
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore
+
+      # Default profile: throwaway SQLite file per test class, no dependencies.
+      - name: Test (SQLite)
+        run: dotnet test --no-build
+
+      # Same suite against real Postgres 16, exercising the provider and the
+      # tsvector/GIN full-text search path the docker-compose deployment uses.
+      - name: Test (Postgres)
+        run: dotnet test --no-build
+        env:
+          POSTGRES_TEST_CONNECTION: "Host=localhost;Database=notes;Username=notes;Password=notes"

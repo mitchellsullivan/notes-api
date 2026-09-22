@@ -1,13 +1,5 @@
 # Notes Service
 
-DISCLAIMER: I’m taking a calculated risk and treating this challenge as an AI-fluency demonstration, for one reason:
-
-_The recruiter explicitly stressed that this is an AI-forward role and asked in-depth about my experience coding with AI. Without that conversation, I would have approached this differently._
-
-The features were planned in advance by me. The code was interactively generated with Claude Fable, GPT-5.6 Sol, and Kimi K3. 
-
-My goal is to show that in a few hours I can collaborate with AI to ship something as correct and feature-complete as possible, without exceeding my existing skillset or anything I'm capable of explaining. This may be wildly off-base, but I'm gambling that for an AI-native role it isn't.
-
 ---
 
 **Description** - A small note-taking HTTP API. ASP.NET Core 6 + EF Core, with token auth,
